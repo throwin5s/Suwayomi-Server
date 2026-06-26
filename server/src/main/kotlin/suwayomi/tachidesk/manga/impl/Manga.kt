@@ -23,10 +23,14 @@ import okhttp3.Response
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.not
+import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.statements.BatchUpdateStatement
+import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.statements.toExecutable
@@ -55,6 +59,7 @@ import suwayomi.tachidesk.manga.model.table.MangaTable
 import suwayomi.tachidesk.manga.model.table.toDataClass
 import suwayomi.tachidesk.server.ApplicationDirs
 import uy.kohesive.injekt.injectLazy
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -447,10 +452,23 @@ object Manga {
 
     fun getUnreadChapters(mangaId: Int): List<ChapterDataClass> =
         transaction {
-            ChapterTable
+            val filteredScanlators = getMangaMetaMap(mangaId)["filteredScanlators"]?.let {
+                try {
+                    Json.decodeFromString<List<String>>(it)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            } ?: emptyList()
+
+            val query = ChapterTable
                 .selectAll()
                 .where { (ChapterTable.manga eq mangaId) and (ChapterTable.isRead eq false) }
-                .orderBy(ChapterTable.sourceOrder to SortOrder.DESC)
+
+            if (filteredScanlators.isNotEmpty()) {
+                query.andWhere { not(ChapterTable.scanlator inList filteredScanlators) or ChapterTable.scanlator.isNull() }
+            }
+
+            query.orderBy(ChapterTable.sourceOrder to SortOrder.DESC)
                 .map { ChapterTable.toDataClass(it) }
         }
 

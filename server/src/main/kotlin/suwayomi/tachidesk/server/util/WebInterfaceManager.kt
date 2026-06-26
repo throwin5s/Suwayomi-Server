@@ -205,17 +205,31 @@ object WebInterfaceManager {
         val tempWebUIRoot = createServableDirectory()
         val orgIndexHtml = File("$tempWebUIRoot/index.html")
 
-        if (ServerSubpath.isDefined() && orgIndexHtml.exists()) {
-            val originalIndexHtml = orgIndexHtml.readText()
-            val subpathInjectionBaseTag = "<base href=\"${ServerSubpath.asRootPath()}\">"
+        if (orgIndexHtml.exists()) {
+            var indexHtml = orgIndexHtml.readText()
 
-            val indexHtmlWithSubpathInjection =
-                originalIndexHtml.replace(
-                    "<head>",
-                    "<head>$subpathInjectionBaseTag",
-                )
+            if (ServerSubpath.isDefined()) {
+                val subpathInjectionBaseTag = "<base href=\"${ServerSubpath.asRootPath()}\">"
+                indexHtml = indexHtml.replace("<head>", "<head>$subpathInjectionBaseTag")
+            }
 
-            orgIndexHtml.writeText(indexHtmlWithSubpathInjection)
+            // Inject custom patch script before </head>
+            if (!indexHtml.contains("custom-patch.js")) {
+                val scriptTag = "<script src=\"${ServerSubpath.asRootPath()}custom-patch.js\"></script>"
+                indexHtml = indexHtml.replace("</head>", "$scriptTag</head>")
+            }
+
+            orgIndexHtml.writeText(indexHtml)
+        }
+
+        // Copy custom-patch.js to serve directory so it can be served as a static file
+        val patchScript = WebInterfaceManager::class.java.getResourceAsStream("/custom-patch.js")
+        if (patchScript != null) {
+            val destFile = File("$tempWebUIRoot/custom-patch.js")
+            patchScript.use { input -> destFile.outputStream().use { output -> input.copyTo(output) } }
+            logger.debug { "Copied custom-patch.js to: ${destFile.canonicalPath}" }
+        } else {
+            logger.warn { "custom-patch.js resource not found — scanlator filter UI will not be available" }
         }
 
         return tempWebUIRoot
