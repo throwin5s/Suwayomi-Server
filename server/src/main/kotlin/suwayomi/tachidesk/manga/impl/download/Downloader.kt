@@ -17,7 +17,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.neq
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import suwayomi.tachidesk.manga.impl.ChapterDownloadHelper
@@ -154,6 +158,33 @@ class Downloader(
                         { (ChapterTable.id eq download.chapterId) },
                     ) {
                         it[isDownloaded] = true
+                    }
+
+                    if (chapter.chapterNumber >= 0f) {
+                        val otherDownloadedChapters = ChapterTable
+                            .select(ChapterTable.id)
+                            .where {
+                                (ChapterTable.manga eq download.mangaId) and
+                                (ChapterTable.chapter_number eq chapter.chapterNumber) and
+                                (ChapterTable.id neq download.chapterId) and
+                                (ChapterTable.isDownloaded eq true)
+                            }
+                            .map { it[ChapterTable.id].value }
+
+                        if (otherDownloadedChapters.isNotEmpty()) {
+                            otherDownloadedChapters.forEach { oldChapterId ->
+                                try {
+                                    ChapterDownloadHelper.delete(download.mangaId, oldChapterId)
+                                } catch (e: Exception) {
+                                    downloadLogger.warn(e) { "Failed to delete old chapter download for chapterId $oldChapterId" }
+                                }
+                            }
+                            ChapterTable.update(
+                                { ChapterTable.id inList otherDownloadedChapters }
+                            ) {
+                                it[isDownloaded] = false
+                            }
+                        }
                     }
                 }
                 finishDownload(downloadLogger, download)
