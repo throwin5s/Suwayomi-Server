@@ -146,11 +146,18 @@ object Chapter {
                 val manga = getManga(mangaId)
                 val source = getCatalogueSourceOrStub(manga.sourceId.toLong())
 
+                val metaMap = getMangaMetaMap(mangaId)
+                val scanlatorPriority = metaMap["scanlatorPriority"]
+
                 val sManga =
                     SManga.create().apply {
                         title = manga.title
                         url = manga.url
-                        description = manga.description
+                        description = if (scanlatorPriority != null) {
+                            "${manga.description ?: ""} ||suwayomi_meta:scanlatorPriority=$scanlatorPriority||"
+                        } else {
+                            manga.description
+                        }
                     }
 
                 val currentLatestChapterNumber = Manga.getLatestChapter(mangaId)?.chapterNumber ?: 0f

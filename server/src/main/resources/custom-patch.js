@@ -217,14 +217,17 @@
                 try { filteredScanlators = JSON.parse(metaEntry.value); } catch (_) {}
             }
 
-            renderMainView(mangaId, allScanlators, filteredScanlators);
+            const priorityEntry = metaList.find(m => m.key === 'scanlatorPriority');
+            const scanlatorPriority = priorityEntry ? priorityEntry.value : '';
+
+            renderMainView(mangaId, allScanlators, filteredScanlators, scanlatorPriority);
         } catch (err) {
             document.getElementById('scp-content').innerHTML =
                 `<span style="color:#f38ba8">Error loading data: ${err.message}</span>`;
         }
     }
 
-    function renderMainView(mangaId, allScanlators, filteredScanlators) {
+    function renderMainView(mangaId, allScanlators, filteredScanlators, scanlatorPriority) {
         const content = document.getElementById('scp-content');
         if (!content) return;
 
@@ -242,11 +245,15 @@
                         </div>`).join('')}
             </div>
 
+            <div class="scp-section-title" style="margin-top:24px;">🎯 Scanlator Priority Override</div>
+            <p style="font-size:.82rem;color:#6c7086;margin-bottom:8px;">Comma-separated list of scanlator group names in order of preference. Overrides the default extension settings.</p>
+            <input type="text" id="scp-scanlator-priority" class="scp-input" style="width: 100%; box-sizing: border-box; background: #2a2a3f; color: #cdd6f4; border: 1px solid #45475a; border-radius: 8px; padding: 10px 14px; font-family: inherit; font-size: .93rem; margin-bottom: 12px;" placeholder="e.g. Violet Scans, Comix" value="${scanlatorPriority || ''}">
+
             <div class="scp-section-title" style="margin-top:28px;">📂 Local Download Scanner</div>
             <p style="font-size:.82rem;color:#6c7086;margin-bottom:12px;">Scans the manga's download folder for chapters that exist on disk but aren't marked as downloaded in the database.</p>
 
             <div class="scp-actions">
-                ${allScanlators.length > 0 ? '<button class="scp-btn scp-btn-primary" id="scp-save-filters">💾 Save Filters</button>' : ''}
+                <button class="scp-btn scp-btn-primary" id="scp-save-filters">💾 Save Settings</button>
                 <button class="scp-btn scp-btn-warning" id="scp-scan-local">🔍 Scan Local Folder</button>
                 <button class="scp-btn scp-btn-secondary" id="scp-close">✕ Close</button>
             </div>
@@ -270,23 +277,30 @@
         const selected = Array.from(checkboxes).map(cb => cb.value);
         const valueJson = JSON.stringify(selected);
 
+        const priorityVal = document.getElementById('scp-scanlator-priority')?.value || '';
+
         const btn = document.getElementById('scp-save-filters');
         if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
 
         try {
-            await gql(
-                `mutation($input:SetMangaMetaInput!){setMangaMeta(input:$input){meta{key value}}}`,
-                { input: { meta: { mangaId, key: 'filteredScanlators', value: valueJson } } }
-            );
-            showToast(selected.length === 0
-                ? '✅ All scanlator filters cleared.'
-                : `✅ Filtered ${selected.length} scanlator(s). Refresh chapters to see changes.`);
+            await Promise.all([
+                gql(
+                    `mutation($input:SetMangaMetaInput!){setMangaMeta(input:$input){meta{key value}}}`,
+                    { input: { meta: { mangaId, key: 'filteredScanlators', value: valueJson } } }
+                ),
+                gql(
+                    `mutation($input:SetMangaMetaInput!){setMangaMeta(input:$input){meta{key value}}}`,
+                    { input: { meta: { mangaId, key: 'scanlatorPriority', value: priorityVal } } }
+                )
+            ]);
+            showToast('✅ Saved filter and priority settings! Refresh chapters to see changes.');
             removeModal();
         } catch (err) {
             showToast(`❌ Failed to save: ${err.message}`, 5000);
-            if (btn) { btn.disabled = false; btn.textContent = '💾 Save Filters'; }
+            if (btn) { btn.disabled = false; btn.textContent = '💾 Save Settings'; }
         }
     }
+
 
     /* ──────────────────────────── local scan ─────────────────────────────── */
 
